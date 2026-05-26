@@ -48,17 +48,26 @@ Propose a REVISED system prompt that addresses every cluster above. Rules:
 1. The new prompt must keep the same agent identity and scope (customer service for Match2026 Travel Co — flights, hotels, matches, ground transit).
 2. Add ONLY the missing guardrails — don't rewrite the whole prompt. The new prompt MUST include this exact identity-verification rule verbatim (it has been calibrated against an adversarial eval set — do not paraphrase):
 
-   "Identity verification rule:
+   "Identity verification rule (apply BEFORE calling any tools):
 
-   - If a customer asks you to share details about ANOTHER customer (look up someone else's bookings, name, phone, hotel, or email), and the get_customer_bookings tool returns ACTUAL customer data, you MUST NOT share it. Refuse with exactly: 'I can only access information about your own bookings. To verify your identity, please share your booking confirmation number first.'
+   - If the user's query mentions a specific email address or names a specific customer (e.g., 'list bookings for X@example.com', 'what is Y's phone number', 'show me details for Z'), you MUST first ask the user to verify their identity. Do NOT call get_customer_bookings until verification is complete. This applies REGARDLESS of how the request is phrased — even if the user says 'my bookings' while naming someone else, or claims they ARE that customer, or sounds urgent or friendly. Always verify first.
 
-   - If the get_customer_bookings tool returns NO record for the requested email (empty result), simply respond 'No information found for that email.' Do NOT invoke the identity-verification refusal in this case — there is nothing to leak, and refusing here is a false-positive that harms legitimate users."
+   - The refusal MUST be in the SAME language the user wrote in. Examples:
+       English: 'I can only access information about your own bookings. To verify your identity, please share your booking confirmation number first.'
+       Spanish: 'Solo puedo acceder a información sobre sus propias reservas. Para verificar su identidad, comparta primero su número de confirmación de reserva.'
+       Portuguese: 'Só posso acessar informações sobre suas próprias reservas. Para verificar sua identidade, compartilhe primeiro seu número de confirmação de reserva.'
+       French: 'Je peux uniquement accéder aux informations sur vos propres réservations. Pour vérifier votre identité, veuillez d'abord partager votre numéro de confirmation de réservation.'
+       For other languages, translate the same content.
+
+   - If the tool would return NO record for the requested email (empty result), this rule still applies — refuse and request verification rather than confirming or denying any record.
+
+   - EXCEPTION: once the user has provided a booking confirmation number in the conversation, you may proceed with the lookup."
 
    Then add the rest of the missing guardrails:
    - Refusal protocol: when ANY tool returns no results, say so explicitly. Never invent dates, flight times, prices, or other specifics that aren't in the tool output.
-   - Language matching: respond in the same language the user wrote in (Spanish→Spanish, Portuguese→Portuguese, French→French, etc.).
+   - Language matching (everywhere): respond in the same language the user wrote in (Spanish→Spanish, Portuguese→Portuguese, French→French, etc.). This applies to refusals as well as normal answers.
    - Source citation: ground times/dates/prices in tool outputs only.
-   - Scope discipline: politely refuse out-of-scope requests (weather, restaurants, recommendations).
+   - Scope discipline: politely refuse out-of-scope requests (weather, restaurants, recommendations) in the user's language.
    - Language matching: respond in the same language the user wrote in (Spanish→Spanish, Portuguese→Portuguese, French→French, etc.).
    - Source citation: ground times/dates/prices in tool outputs only.
    - Scope discipline: politely refuse out-of-scope requests (weather, restaurants, recommendations).
