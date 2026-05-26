@@ -438,6 +438,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
       const d = JSON.parse(e.data);
       pushStream('🔬 Diagnosed <b>' + d.cluster_label + '</b> — ' + d.eval_cases_generated + ' adversarial cases');
     });
+    es.addEventListener('dataset_pushed', (e) => {
+      const d = JSON.parse(e.data);
+      if (d.error) {
+        pushStream('<span class="fail">⨯</span> Phoenix dataset write failed: ' + escapeHtml(d.error));
+      } else {
+        pushStream('💾 Wrote ' + d.n_cases + ' eval cases to Phoenix dataset <span class="ok">' + escapeHtml(d.dataset_id || '?') + '</span>');
+      }
+    });
     es.addEventListener('candidate_proposed', (e) => {
       const d = JSON.parse(e.data);
       pushStream('✎ Candidate prompt drafted (' + d.prompt_length_chars + ' chars)');

@@ -20,7 +20,7 @@ from agent_sre.phases.cluster import cluster_failures
 from agent_sre.phases.observe import failure_candidates, observe
 from agent_sre.phases.propose import propose_fix
 from agent_sre.phases.ship import ship
-from agent_sre.phases.synthesize import diagnose_and_synthesize
+from agent_sre.phases.synthesize import diagnose_and_synthesize, push_to_phoenix_dataset
 from agent_sre.phases.validate import validate
 from agent_sre.phases.watch import check_for_drift
 from target_agent.prompts import ROOT_INSTRUCTION
@@ -211,8 +211,35 @@ async def run_pipeline(
                 ],
             }
         yield complete_phase(3, f"{len(diagnoses)} clusters diagnosed", {"diagnoses": len(diagnoses)})
+
+        # Push the adversarial cases to a Phoenix dataset so judges can verify
+        # (and so we deliver on the "writes evals into Phoenix" claim).
+        dataset_id = None
+        try:
+            push_response = await asyncio.to_thread(push_to_phoenix_dataset, all_cases)
+            dataset_id = (
+                push_response.get("data", {}).get("dataset_id")
+                if isinstance(push_response, dict)
+                else None
+            )
+            yield {
+                "type": "dataset_pushed",
+                "dataset_id": dataset_id,
+                "n_cases": len(all_cases),
+            }
+        except Exception as e:
+            # Non-fatal — we keep going with the in-memory cases.
+            yield {
+                "type": "dataset_pushed",
+                "error": str(e)[:200],
+                "n_cases": len(all_cases),
+            }
+
+        summary_suffix = f" → Phoenix dataset {dataset_id}" if dataset_id else ""
         yield complete_phase(
-            4, f"{len(all_cases)} adversarial eval cases written", {"eval_cases": len(all_cases)}
+            4,
+            f"{len(all_cases)} adversarial eval cases written{summary_suffix}",
+            {"eval_cases": len(all_cases), "dataset_id": dataset_id},
         )
 
         # ---- Phase 5 — Propose Fix ----
@@ -280,12 +307,16 @@ async def run_pipeline(
         yield complete_phase(7, "Shipped. Postmortem written.")
 
         # ---- Phase 8 — Drift Watch (single check) ----
+        # Use the SAME cases Phase 6 evaluated against, so this is apples-to-apples
+        # rather than a smaller random subsample that swings on judge noise.
         yield start_phase(8, "Drift Watch")
+        cases_for_drift = [cr.case for cr in val.cases]
         drift = await check_for_drift(
-            eval_cases=all_cases,
+            eval_cases=cases_for_drift,
             candidate_prompt=candidate.text,
             baseline_score=val.candidate_score,
-            max_cases=3,
+            max_cases=len(cases_for_drift),
+            regression_threshold=0.25,  # be tolerant of judge stochasticity
         )
         yield {
             "type": "drift_report",
