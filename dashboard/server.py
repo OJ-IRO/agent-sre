@@ -401,9 +401,27 @@ INDEX_HTML = r"""<!DOCTYPE html>
     el.style.color = color;
   }
 
+  let currentEs = null;
+
   document.getElementById('run-btn').addEventListener('click', () => {
-    // Reset UI
-    PHASES.forEach(p => setPhase(p.id, 'pending'));
+    // Close any in-flight stream from a previous run so events don't interleave.
+    if (currentEs) {
+      try { currentEs.close(); } catch (e) {}
+      currentEs = null;
+    }
+    // Full UI reset — clear EVERYTHING from the previous run.
+    PHASES.forEach(p => {
+      setPhase(p.id, 'pending');
+      // Clear summary HTML (Phase 5 stores the prompt-diff details element here)
+      const summary = document.getElementById('phase-' + p.id + '-summary');
+      if (summary) summary.innerHTML = '';
+      // Clear elapsed-time badge
+      const elapsed = document.getElementById('phase-' + p.id + '-elapsed');
+      if (elapsed) {
+        elapsed.textContent = '';
+        elapsed.classList.add('hidden');
+      }
+    });
     document.getElementById('clusters').innerHTML = '<div class="mono" style="color: var(--muted);">— waiting for Phase 2 —</div>';
     document.getElementById('ship').innerHTML = '<div class="mono" style="color: var(--muted);">— waiting for Phase 7 —</div>';
     document.getElementById('stream').innerHTML = '';
@@ -422,6 +440,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     let clustersList = [];
 
     const es = new EventSource('/api/run');
+    currentEs = es;
 
     es.addEventListener('pipeline_start', () => {
       pushStream('<span class="ok">Pipeline started.</span>');
