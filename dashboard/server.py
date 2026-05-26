@@ -177,6 +177,36 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .diff-ctx { color: var(--muted); display: block; }
   a.repo-link { color: var(--teal); text-decoration: none; }
   a.repo-link:hover { text-decoration: underline; }
+  .case-detail { margin: 2px 0; }
+  .case-detail > summary {
+    font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+    padding: 6px 10px; background: transparent;
+    color: var(--muted); border-radius: 4px;
+  }
+  .case-detail > summary:hover { background: rgba(0,217,255,0.04); color: var(--text); }
+  .case-detail[open] > summary { background: rgba(0,217,255,0.06); color: var(--text); }
+  .case-detail.fixed > summary { border-left: 2px solid var(--green); }
+  .case-detail.regressed > summary { border-left: 2px solid var(--red); }
+  .case-body {
+    padding: 12px 14px 14px; background: var(--panel-2); border-radius: 6px;
+    margin: 4px 0 6px; font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; line-height: 1.55;
+  }
+  .case-section { margin-bottom: 12px; }
+  .case-section:last-child { margin-bottom: 0; }
+  .case-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); margin-bottom: 3px;
+  }
+  .case-label.passed { color: var(--green); }
+  .case-label.failed { color: var(--red); }
+  .case-value {
+    color: var(--text); white-space: pre-wrap; word-break: break-word;
+  }
+  .case-reason {
+    color: var(--muted); font-style: italic; margin-top: 4px;
+    font-size: 11.5px; padding-left: 8px; border-left: 2px solid var(--gridline);
+  }
 </style>
 </head>
 <body>
@@ -463,7 +493,35 @@ INDEX_HTML = r"""<!DOCTYPE html>
       const c = d.candidate_passed ? '<span class="ok">✓</span>' : '<span class="fail">✗</span>';
       const flag = d.verdict === 'FIXED' ? ' <span class="ok">[FIXED]</span>' :
                    d.verdict === 'REGRESSED' ? ' <span class="fail">[REGRESSED]</span>' : '';
-      pushStream('Case ' + d.case_idx + ': ' + o + '→' + c + flag + ' &nbsp;' + d.input.slice(0, 70));
+      const verdictCls = d.verdict === 'FIXED' ? 'fixed' : (d.verdict === 'REGRESSED' ? 'regressed' : '');
+      const origLabel = d.original_passed ? 'Original agent — passed' : 'Original agent — failed';
+      const candLabel = d.candidate_passed ? 'Candidate agent — passed' : 'Candidate agent — failed';
+      const origCls = d.original_passed ? 'passed' : 'failed';
+      const candCls = d.candidate_passed ? 'passed' : 'failed';
+      const origReason = d.judge_reason_original ? '<div class="case-reason">Judge: ' + escapeHtml(d.judge_reason_original) + '</div>' : '';
+      const candReason = d.judge_reason_candidate ? '<div class="case-reason">Judge: ' + escapeHtml(d.judge_reason_candidate) + '</div>' : '';
+      const html = `
+        <details class="case-detail ${verdictCls}">
+          <summary>Case ${d.case_idx}: ${o}→${c}${flag} &nbsp;&nbsp;${escapeHtml(d.input.slice(0, 90))}</summary>
+          <div class="case-body">
+            <div class="case-section">
+              <div class="case-label">Expected behavior</div>
+              <div class="case-value">${escapeHtml(d.expected_behavior || '(not provided)')}</div>
+            </div>
+            <div class="case-section">
+              <div class="case-label ${origCls}">${origLabel}</div>
+              <div class="case-value">${escapeHtml(d.original_output || '(empty response)')}</div>
+              ${origReason}
+            </div>
+            <div class="case-section">
+              <div class="case-label ${candCls}">${candLabel}</div>
+              <div class="case-value">${escapeHtml(d.candidate_output || '(empty response)')}</div>
+              ${candReason}
+            </div>
+          </div>
+        </details>
+      `;
+      pushStream(html);
     });
     es.addEventListener('validation_complete', (e) => {
       const d = JSON.parse(e.data);

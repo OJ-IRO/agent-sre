@@ -257,10 +257,13 @@ async def run_pipeline(
                 "type": "validation_case",
                 "case_idx": i,
                 "input": cr.case.input,
+                "expected_behavior": cr.case.expected_behavior,
                 "original_passed": cr.original_passed,
                 "candidate_passed": cr.candidate_passed,
-                "original_output": cr.original_output[:300],
-                "candidate_output": cr.candidate_output[:300],
+                "original_output": (cr.original_output or "")[:800],
+                "candidate_output": (cr.candidate_output or "")[:800],
+                "judge_reason_original": cr.judge_reason_original,
+                "judge_reason_candidate": cr.judge_reason_candidate,
                 "verdict": (
                     "FIXED" if (not cr.original_passed and cr.candidate_passed)
                     else "REGRESSED" if (cr.original_passed and not cr.candidate_passed)
