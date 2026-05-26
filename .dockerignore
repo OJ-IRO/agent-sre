@@ -1,0 +1,42 @@
+# Local dev junk
+.venv/
+.uv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets — must never ship in the image
+.env
+.env.local
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Generated artifacts
+ship_artifacts/
+local_data/
+*.sqlite
+*.db
+*.log
+
+# Claude Code metadata
+.claude/
+
+# Markdown / docs not needed inside the container (LICENSE + README copied explicitly)
+*.md
+!README.md
+
+# Infra is built separately per service
+infra/
