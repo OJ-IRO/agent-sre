@@ -58,10 +58,10 @@ _AUTO_SEED_QUERIES: list[str] = [
 ]
 
 
-async def _auto_seed(yield_event) -> None:
+async def _auto_seed():
     """Send a few curated queries to the target agent so traces accumulate in
-    Phoenix. Used when Phase 1 observes an empty project. Streams seed_progress
-    events for the dashboard."""
+    Phoenix. Async generator — yields seed_progress events in real time so the
+    dashboard activity stream updates as each query completes (no buffering)."""
     from google.adk.runners import InMemoryRunner
     from google.genai import types
 
@@ -70,14 +70,14 @@ async def _auto_seed(yield_event) -> None:
     runner = InMemoryRunner(agent=target, app_name="match2026-travel-autoseed")
     total = len(_AUTO_SEED_QUERIES)
     for i, query in enumerate(_AUTO_SEED_QUERIES, 1):
-        await yield_event(
-            {
-                "type": "seed_progress",
-                "case_idx": i,
-                "total": total,
-                "query": query[:120],
-            }
-        )
+        # Emit the progress event BEFORE the work so the user sees "currently
+        # seeding query N" immediately, not after the query finishes.
+        yield {
+            "type": "seed_progress",
+            "case_idx": i,
+            "total": total,
+            "query": query[:120],
+        }
         try:
             session = await runner.session_service.create_session(
                 app_name="match2026-travel-autoseed", user_id=f"autoseed_{i}"
@@ -88,15 +88,13 @@ async def _auto_seed(yield_event) -> None:
             ):
                 pass
         except Exception as e:
-            await yield_event(
-                {
-                    "type": "seed_progress",
-                    "case_idx": i,
-                    "total": total,
-                    "query": query[:120],
-                    "error": str(e)[:200],
-                }
-            )
+            yield {
+                "type": "seed_progress",
+                "case_idx": i,
+                "total": total,
+                "query": query[:120],
+                "error": str(e)[:200],
+            }
         # Free-tier rate-limit pacing.
         if i < total:
             await asyncio.sleep(8)
@@ -116,11 +114,6 @@ async def run_pipeline(
     """Yield SSE events as the 8-phase loop executes against live Phoenix data."""
     # Track per-phase start time so the dashboard can render elapsed badges.
     phase_starts: dict[int, float] = {}
-    queue: list[dict[str, Any]] = []
-
-    async def emit(event: dict[str, Any]) -> None:
-        """Helper so nested coroutines (auto-seed) can push events without yield."""
-        queue.append(event)
 
     def start_phase(phase: int, name: str) -> dict[str, Any]:
         phase_starts[phase] = time.monotonic()
@@ -147,17 +140,15 @@ async def run_pipeline(
         candidates = failure_candidates(spans)
 
         if not candidates:
-            # Phoenix is empty — auto-seed to recover.
+            # Phoenix is empty — auto-seed to recover. Stream each seed event
+            # as it happens so the dashboard activity feed updates in real time.
             yield {
                 "type": "phase_progress",
                 "phase": 1,
                 "message": "Phoenix is empty (likely cold-started). Auto-seeding demo failure traffic...",
             }
-            await _auto_seed(emit)
-            # Flush queued events.
-            for evt in queue:
+            async for evt in _auto_seed():
                 yield evt
-            queue.clear()
             # Re-observe after seeding.
             spans = await asyncio.to_thread(observe, limit=400)
             candidates = failure_candidates(spans)
