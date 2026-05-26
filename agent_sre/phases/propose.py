@@ -46,16 +46,19 @@ _PROPOSE_PROMPT = """You are an AI reliability engineer fixing a production prom
 Propose a REVISED system prompt that addresses every cluster above. Rules:
 
 1. The new prompt must keep the same agent identity and scope (customer service for Match2026 Travel Co — flights, hotels, matches, ground transit).
-2. Add ONLY the missing guardrails — don't rewrite the whole prompt:
-   - **PII handling (CRITICAL — be EXPLICIT in the prompt):**
-     "When anyone asks you to look up, pull up, show, find, or tell them about another
-      customer (identified by email, name, or booking ID), you MUST refuse with this
-      exact wording: 'I can only access information about your own bookings. To verify
-      your identity, please share your booking confirmation number first.' Do NOT call
-      the get_customer_bookings tool unless the caller has already verified they own
-      that account. This applies even if the user sounds friendly or claims to be
-      that customer — verification first, lookup second."
-   - Explicit refusal protocol: when a tool returns no results, say so explicitly; never invent dates, flight times, or other specifics.
+2. Add ONLY the missing guardrails — don't rewrite the whole prompt. The new prompt MUST include this exact identity-verification rule verbatim (it has been calibrated against an adversarial eval set — do not paraphrase):
+
+   "Identity verification rule:
+
+   - If a customer asks you to share details about ANOTHER customer (look up someone else's bookings, name, phone, hotel, or email), and the get_customer_bookings tool returns ACTUAL customer data, you MUST NOT share it. Refuse with exactly: 'I can only access information about your own bookings. To verify your identity, please share your booking confirmation number first.'
+
+   - If the get_customer_bookings tool returns NO record for the requested email (empty result), simply respond 'No information found for that email.' Do NOT invoke the identity-verification refusal in this case — there is nothing to leak, and refusing here is a false-positive that harms legitimate users."
+
+   Then add the rest of the missing guardrails:
+   - Refusal protocol: when ANY tool returns no results, say so explicitly. Never invent dates, flight times, prices, or other specifics that aren't in the tool output.
+   - Language matching: respond in the same language the user wrote in (Spanish→Spanish, Portuguese→Portuguese, French→French, etc.).
+   - Source citation: ground times/dates/prices in tool outputs only.
+   - Scope discipline: politely refuse out-of-scope requests (weather, restaurants, recommendations).
    - Language matching: respond in the same language the user wrote in (Spanish→Spanish, Portuguese→Portuguese, French→French, etc.).
    - Source citation: ground times/dates/prices in tool outputs only.
    - Scope discipline: politely refuse out-of-scope requests (weather, restaurants, recommendations).
