@@ -1,10 +1,11 @@
-.PHONY: install run-target run-sre spike deploy-target deploy-sre clean
+.PHONY: install run-target run-sre run-pipeline serve-dashboard serve-phoenix deploy clean
 
 # Install all deps via uv.
 install:
 	uv sync
 
-# Start self-hosted Phoenix locally at http://localhost:6006. Run in a separate terminal.
+# Start a self-hosted Phoenix instance locally at http://localhost:6006.
+# Run this in one terminal, then run other commands in another.
 serve-phoenix:
 	uv run phoenix serve
 
@@ -16,29 +17,21 @@ run-target:
 run-sre:
 	uv run adk web agent_sre
 
-# End-to-end proof of life: one query to target, verify Agent SRE can read traces via MCP.
-spike:
-	uv run python -m scripts.spike
+# Seed the target agent with demo failure traffic. Phoenix must be running.
+seed:
+	uv run python -m scripts.seed_failures
 
-# Start the judge-facing dashboard at http://localhost:8080
+# Run the complete 8-phase autonomous loop end-to-end (terminal output).
+run-pipeline:
+	uv run python -m scripts.run_pipeline
+
+# Start the judge-facing dashboard at http://localhost:8080.
 serve-dashboard:
 	uv run uvicorn dashboard.server:app --host 0.0.0.0 --port 8080 --reload
 
-# Deploy the target agent to Cloud Run.
-deploy-target:
-	adk deploy cloud_run \
-		--project=$$GOOGLE_CLOUD_PROJECT \
-		--region=$$GOOGLE_CLOUD_LOCATION \
-		--service_name=match2026-travel \
-		target_agent
-
-# Deploy Agent SRE to Cloud Run.
-deploy-sre:
-	adk deploy cloud_run \
-		--project=$$GOOGLE_CLOUD_PROJECT \
-		--region=$$GOOGLE_CLOUD_LOCATION \
-		--service_name=agent-sre \
-		agent_sre
+# Deploy Phoenix + Dashboard to Cloud Run. Requires GOOGLE_CLOUD_PROJECT.
+deploy:
+	bash ./infra/deploy.sh
 
 clean:
 	rm -rf .venv __pycache__ .pytest_cache *.egg-info

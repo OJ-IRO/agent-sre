@@ -47,3 +47,6 @@ gcloud-key.json
 local_data/
 *.sqlite
 *.db
+
+# Runtime outputs (Agent SRE writes here — committed example lives in examples/)
+ship_artifacts/
