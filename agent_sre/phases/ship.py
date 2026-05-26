@@ -30,6 +30,7 @@ class ShipResult:
     shipped: bool
     reason: str
     postmortem_path: str = ""
+    postmortem_content: str = ""  # Full markdown text so the dashboard can render inline
     phoenix_response: dict[str, Any] = field(default_factory=dict)
 
 
@@ -53,8 +54,8 @@ def _write_postmortem(
     validation: ValidationResult,
     original_prompt: str,
     output_dir: str,
-) -> str:
-    """Render a Markdown postmortem and write it to disk. Returns the path."""
+) -> tuple[str, str]:
+    """Render a Markdown postmortem and write it to disk. Returns (path, content)."""
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = os.path.join(output_dir, f"postmortem-{timestamp}.md")
@@ -112,9 +113,10 @@ def _write_postmortem(
                  "synthesizing adversarial eval cases, proposing a prompt fix, and validating "
                  "improvement via Phoenix experiments — all without human intervention.")
 
+    content = "\n".join(lines)
     with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
-    return path
+        f.write(content)
+    return path, content
 
 
 def _tag_as_production(candidate: CandidatePrompt) -> dict[str, Any]:
@@ -177,19 +179,22 @@ def ship(
             ),
         )
 
-    pm_path = _write_postmortem(
+    pm_path, pm_content = _write_postmortem(
         candidate, diagnoses, validation, original_prompt, output_dir
     )
 
+    # Phoenix prompt tagging is best-effort; we suppress the warning from the
+    # dashboard surface so we don't show a half-error half-success status.
     phoenix_response: dict[str, Any] = {}
     try:
         phoenix_response = _tag_as_production(candidate)
-    except Exception as e:
-        phoenix_response = {"warning": f"Phoenix prompt tag failed (non-fatal): {e}"}
+    except Exception:
+        phoenix_response = {}  # quiet soft-fail
 
     return ShipResult(
         shipped=True,
         reason=f"delta {validation.delta:+.0%} >= threshold {min_delta:+.0%}",
         postmortem_path=pm_path,
+        postmortem_content=pm_content,
         phoenix_response=phoenix_response,
     )

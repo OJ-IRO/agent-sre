@@ -147,6 +147,36 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .stream-line .fail { color: var(--red); }
   @keyframes fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
   .num-readout { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+  .elapsed-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    color: var(--muted); padding: 1px 7px; border-radius: 999px;
+    border: 1px solid var(--gridline); margin-left: 6px;
+  }
+  details > summary {
+    cursor: pointer; user-select: none; list-style: none;
+    padding: 8px 10px; background: var(--panel-2); border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    color: var(--teal); transition: background 120ms ease;
+  }
+  details > summary:hover { background: rgba(0,217,255,0.08); }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] > summary { background: rgba(0,217,255,0.10); }
+  details[open] > summary::before { content: "▼ "; }
+  details:not([open]) > summary::before { content: "▶ "; }
+  .diff-block, .postmortem-block {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    background: var(--panel-2); border-radius: 6px; padding: 12px;
+    margin-top: 8px; white-space: pre; overflow-x: auto;
+    max-height: 360px; overflow-y: auto;
+    line-height: 1.55;
+  }
+  .postmortem-block { white-space: pre-wrap; word-break: break-word; }
+  .diff-add { color: var(--green); background: rgba(45,255,166,0.06); display: block; }
+  .diff-del { color: var(--red);   background: rgba(255,92,92,0.06); display: block; }
+  .diff-hdr { color: #9ad0ff; display: block; }
+  .diff-ctx { color: var(--muted); display: block; }
+  a.repo-link { color: var(--teal); text-decoration: none; }
+  a.repo-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -238,8 +268,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <div id="stream" class="max-h-80 overflow-y-auto"></div>
   </section>
 
-  <footer class="mt-10 text-center text-xs mono" style="color: var(--muted);">
-    Built with Google ADK · Gemini · Arize Phoenix MCP · Cloud Run
+  <footer class="mt-10 text-center text-xs mono space-y-1" style="color: var(--muted);">
+    <div>Built with Google ADK · Gemini · Arize Phoenix MCP · Cloud Run</div>
+    <div>
+      <a class="repo-link" href="https://github.com/OJ-IRO/agent-sre" target="_blank" rel="noopener">
+        source on github.com/OJ-IRO/agent-sre
+      </a>
+    </div>
   </footer>
 </main>
 
@@ -262,7 +297,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="mono num-readout text-2xl w-10 text-right" style="color: var(--muted);">${p.id}</div>
         <div class="flex-1">
           <div class="flex items-center justify-between gap-2">
-            <div class="font-semibold text-base">${p.name}</div>
+            <div class="font-semibold text-base flex items-center">
+              ${p.name}
+              <span class="elapsed-badge hidden" id="phase-${p.id}-elapsed"></span>
+            </div>
             <span class="badge" id="phase-${p.id}-status" style="color: var(--muted); border:1px solid var(--gridline);">PENDING</span>
           </div>
           <div class="text-xs mt-0.5" style="color: var(--muted);">${p.desc}</div>
@@ -282,7 +320,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     stream.appendChild(div);
     stream.scrollTop = stream.scrollHeight;
   }
-  function setPhase(id, state, summary) {
+  function setPhase(id, state, summary, elapsedSec) {
     const card = document.getElementById('phase-' + id);
     const status = document.getElementById('phase-' + id + '-status');
     if (!card || !status) return;
@@ -304,6 +342,28 @@ INDEX_HTML = r"""<!DOCTYPE html>
       status.style.borderColor = 'var(--red)';
     }
     if (summary) document.getElementById('phase-' + id + '-summary').textContent = summary;
+    if (elapsedSec != null) {
+      const el = document.getElementById('phase-' + id + '-elapsed');
+      if (el) {
+        el.textContent = elapsedSec.toFixed(1) + 's';
+        el.classList.remove('hidden');
+      }
+    }
+  }
+  function renderDiff(text) {
+    if (!text) return '';
+    const lines = text.split('\n');
+    return lines.map(line => {
+      let cls = 'diff-ctx';
+      if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) cls = 'diff-hdr';
+      else if (line.startsWith('+')) cls = 'diff-add';
+      else if (line.startsWith('-')) cls = 'diff-del';
+      const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return '<span class="' + cls + '">' + (escaped || '&nbsp;') + '</span>';
+    }).join('');
+  }
+  function escapeHtml(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   function setStatus(text, color='var(--teal)') {
     const el = document.getElementById('status-text');
@@ -343,8 +403,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     es.addEventListener('phase_complete', (e) => {
       const d = JSON.parse(e.data);
-      setPhase(d.phase, 'done', d.summary || '');
-      pushStream('<span class="ok">✓</span> Phase ' + d.phase + ' — ' + (d.summary || 'done'));
+      setPhase(d.phase, 'done', d.summary || '', d.elapsed_seconds);
+      const elapsedStr = d.elapsed_seconds != null ? ' (' + d.elapsed_seconds.toFixed(1) + 's)' : '';
+      pushStream('<span class="ok">✓</span> Phase ' + d.phase + elapsedStr + ' — ' + (d.summary || 'done'));
+    });
+    es.addEventListener('phase_progress', (e) => {
+      const d = JSON.parse(e.data);
+      pushStream('· ' + (d.message || ''));
+      if (d.phase === 1) {
+        document.getElementById('phase-1-summary').textContent = d.message || '';
+      }
+    });
+    es.addEventListener('seed_progress', (e) => {
+      const d = JSON.parse(e.data);
+      const tag = d.error ? '<span class="fail">⨯</span>' : '<span class="ok">●</span>';
+      pushStream(tag + ' Auto-seed ' + d.case_idx + '/' + d.total + ': ' + escapeHtml(d.query));
     });
     es.addEventListener('cluster_found', (e) => {
       const d = JSON.parse(e.data);
@@ -368,6 +441,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
     es.addEventListener('candidate_proposed', (e) => {
       const d = JSON.parse(e.data);
       pushStream('✎ Candidate prompt drafted (' + d.prompt_length_chars + ' chars)');
+      // Render the diff inline in the Phase 5 summary area.
+      const summary = document.getElementById('phase-5-summary');
+      if (summary && d.prompt_diff) {
+        summary.innerHTML = '<div>Candidate prompt drafted (' + d.prompt_length_chars + ' chars)</div>' +
+          '<details class="mt-2"><summary>View prompt diff (autonomous fix)</summary>' +
+          '<div class="diff-block">' + renderDiff(d.prompt_diff) + '</div></details>';
+      }
     });
     es.addEventListener('validation_case', (e) => {
       const d = JSON.parse(e.data);
@@ -391,10 +471,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
     es.addEventListener('ship_decision', (e) => {
       const d = JSON.parse(e.data);
       const cls = d.shipped ? 'sev-low' : 'sev-medium';
+      const postmortemBlock = (d.shipped && d.postmortem_content) ? `
+        <details class="mt-3">
+          <summary>View autonomous postmortem</summary>
+          <div class="postmortem-block">${escapeHtml(d.postmortem_content)}</div>
+        </details>` : '';
       document.getElementById('ship').innerHTML = `
         <span class="badge ${cls}">${d.shipped ? 'SHIPPED' : 'BLOCKED'}</span>
-        <div class="mt-2 text-sm">${d.reason}</div>
-        ${d.postmortem_path ? '<div class="mt-2 text-xs mono" style="color: var(--muted);">Postmortem: ' + d.postmortem_path + '</div>' : ''}
+        <div class="mt-2 text-sm">${escapeHtml(d.reason)}</div>
+        ${postmortemBlock}
       `;
       pushStream((d.shipped ? '🚀 <span class="ok">SHIPPED</span>' : '⏸ <span class="fail">NOT SHIPPED</span>') + ' — ' + d.reason);
     });
