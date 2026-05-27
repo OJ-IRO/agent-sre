@@ -370,6 +370,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
       status.textContent = 'ERROR';
       status.style.color = 'var(--red)';
       status.style.borderColor = 'var(--red)';
+    } else {
+      // 'pending' — reset to the initial visual state.
+      status.textContent = 'PENDING';
+      status.style.color = 'var(--muted)';
+      status.style.borderColor = 'var(--gridline)';
     }
     if (summary) document.getElementById('phase-' + id + '-summary').textContent = summary;
     if (elapsedSec != null) {
